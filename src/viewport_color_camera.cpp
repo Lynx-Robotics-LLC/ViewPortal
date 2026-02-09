@@ -2,8 +2,6 @@
 #include <pangolin/display/display.h>
 #include <pangolin/gl/gl.h>
 #include <pangolin/var/var.h>
-#include <opencv2/opencv.hpp>
-#include <iostream>
 #include <cstdlib>
 #include <memory>
 
@@ -15,12 +13,7 @@ public:
         : name_(name),
           width_(320),
           height_(240),
-          use_camera_(false),
           colorImageArray_(nullptr) {
-        use_camera_ = tryOpenCamera();
-        if (!use_camera_) {
-            std::cout << "Warning: Could not open USB camera, using random noise instead" << std::endl;
-        }
         size_t color_buffer_size = 3 * width_ * height_;
         colorImageArray_ = new unsigned char[color_buffer_size];
         colorTexture_ = pangolin::GlTexture(width_, height_, GL_RGB, false, 0, GL_RGB, GL_UNSIGNED_BYTE);
@@ -28,7 +21,6 @@ public:
     }
 
     ~ColorCameraViewport() override {
-        if (cap_.isOpened()) cap_.release();
         if (colorImageArray_) {
             delete[] colorImageArray_;
             colorImageArray_ = nullptr;
@@ -38,21 +30,18 @@ public:
     pangolin::View& getView() override { return *view_; }
     std::string getName() const override { return name_; }
 
+    void setFrame(const FrameData& frame) override {
+        user_frame_ = frame;
+    }
+
     void update() override {
-        if (use_camera_ && cap_.isOpened()) {
-            cv::Mat frame;
-            if (cap_.read(frame)) {
-                cv::Mat rgb_frame;
-                cv::cvtColor(frame, rgb_frame, cv::COLOR_BGR2RGB);
-                colorTexture_.Upload(rgb_frame.data, GL_RGB, GL_UNSIGNED_BYTE);
-            } else {
-                setColorImageData(colorImageArray_, 3 * width_ * height_);
-                colorTexture_.Upload(colorImageArray_, GL_RGB, GL_UNSIGNED_BYTE);
-            }
-        } else {
-            setColorImageData(colorImageArray_, 3 * width_ * height_);
-            colorTexture_.Upload(colorImageArray_, GL_RGB, GL_UNSIGNED_BYTE);
+        if (user_frame_.data != nullptr && user_frame_.width > 0 && user_frame_.height > 0) {
+            ensureTextureSize(user_frame_.width, user_frame_.height, user_frame_.format);
+            uploadFrame(user_frame_);
+            return;
         }
+        setColorImageData(colorImageArray_, 3 * width_ * height_);
+        colorTexture_.Upload(colorImageArray_, GL_RGB, GL_UNSIGNED_BYTE);
     }
 
     void render() override {
@@ -79,24 +68,37 @@ private:
         }
     }
 
-    bool tryOpenCamera() {
-        for (int camera_index = 0; camera_index < 4; ++camera_index) {
-            if (cap_.open(camera_index)) {
-                width_ = (int)cap_.get(cv::CAP_PROP_FRAME_WIDTH);
-                height_ = (int)cap_.get(cv::CAP_PROP_FRAME_HEIGHT);
-                std::cout << "Opened camera " << camera_index << " (" << width_ << "x" << height_ << ")" << std::endl;
-                return true;
-            }
+    void ensureTextureSize(int w, int h, ImageFormat fmt) {
+        if (w == width_ && h == height_ && fmt == last_format_) return;
+        width_ = w;
+        height_ = h;
+        last_format_ = fmt;
+        GLint gl_internal = GL_RGB;
+        GLenum gl_format = GL_RGB;
+        if (fmt == ImageFormat::RGBA8) {
+            gl_internal = GL_RGBA;
+            gl_format = GL_RGBA;
+        } else if (fmt == ImageFormat::Luminance8) {
+            gl_internal = GL_LUMINANCE;
+            gl_format = GL_LUMINANCE;
         }
-        return false;
+        colorTexture_ = pangolin::GlTexture(w, h, gl_internal, false, 0, gl_format, GL_UNSIGNED_BYTE);
     }
+
+    void uploadFrame(const FrameData& frame) {
+        GLenum gl_format = GL_RGB;
+        if (frame.format == ImageFormat::RGBA8) gl_format = GL_RGBA;
+        else if (frame.format == ImageFormat::Luminance8) gl_format = GL_LUMINANCE;
+        colorTexture_.Upload(frame.data, gl_format, GL_UNSIGNED_BYTE);
+    }
+
+    FrameData user_frame_;
+    ImageFormat last_format_ = ImageFormat::RGB8;
 
     std::string name_;
     pangolin::View* view_;
-    cv::VideoCapture cap_;
     int width_;
     int height_;
-    bool use_camera_;
     unsigned char* colorImageArray_;
     pangolin::GlTexture colorTexture_;
     std::unique_ptr<pangolin::Var<bool>> show_view_;

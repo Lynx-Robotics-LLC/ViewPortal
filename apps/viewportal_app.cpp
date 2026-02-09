@@ -1,184 +1,98 @@
-#include "viewport.h"
-#include <pangolin/var/var.h>
-#include <pangolin/gl/gl.h>
-#include <pangolin/display/display.h>
-#include <pangolin/display/view.h>
-#include <pangolin/display/widgets.h>
-#include <pangolin/display/default_font.h>
-#include <pangolin/handler/handler.h>
+#include "viewportal.h"
+#include <opencv2/opencv.hpp>
 #include <vector>
-#include <memory>
-#include <array>
-#include <functional>
-#include <chrono>
+#include <cstdlib>
 #include <cmath>
-
-namespace {
-
-// Handler that detects double-click on the multi view's children and invokes a callback (e.g. fullscreen).
-struct DoubleClickFullscreenHandler : pangolin::Handler {
-    static constexpr double kDoubleClickTimeSec = 0.35;
-    static constexpr int kDoubleClickSlopPx = 8;
-
-    std::function<void(int view_id)> on_double_click;
-    double last_click_time = 0.0;
-    int last_click_x = 0;
-    int last_click_y = 0;
-    int last_click_view_id = 0;
-
-    void Mouse(pangolin::View& view, pangolin::MouseButton button, int x, int y, bool pressed, int button_state) override {
-        (void)button_state;
-        if (button == pangolin::MouseButtonLeft && pressed && on_double_click) {
-            int view_id = 0;
-            for (size_t i = 0; i < view.NumChildren(); ++i) {
-                if (view[i].IsShown() && view[i].GetBounds().Contains(x, y)) {
-                    view_id = static_cast<int>(i) + 1;
-                    break;
-                }
-            }
-            if (view_id != 0) {
-                double t = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-                if (last_click_time > 0.0 &&
-                    (t - last_click_time) < kDoubleClickTimeSec &&
-                    last_click_view_id == view_id &&
-                    std::abs(x - last_click_x) <= kDoubleClickSlopPx &&
-                    std::abs(y - last_click_y) <= kDoubleClickSlopPx) {
-                    on_double_click(view_id);
-                    last_click_time = 0.0;
-                    return;
-                }
-                last_click_time = t;
-                last_click_x = x;
-                last_click_y = y;
-                last_click_view_id = view_id;
-            }
-        }
-        pangolin::Handler::Mouse(view, button, x, y, pressed, button_state);
-    }
-};
-
-} // namespace
+#include <iostream>
+#include <cstring>
 
 int main(int /*argc*/, char* /*argv*/[])
 {
-    const float aspect_ratio = 640.0f / 480.0f;
-    const int UI_WIDTH = 200;
-    const size_t N_VIEWS = 4;
+    using namespace viewportal;
 
-    pangolin::CreateWindowAndBind("ViewPortal Multi-View", 1280, 720);
-
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    pangolin::Display("multi")
-        .SetBounds(0.0, 1.0, pangolin::Attach::Pix(UI_WIDTH), 1.0)
-        .SetLayout(pangolin::LayoutEqual);
-
-    std::vector<std::unique_ptr<viewportal::Viewport>> viewports;
-    viewports.push_back(viewportal::createViewport("color_camera", "color", aspect_ratio));
-    viewports.push_back(viewportal::createViewport("depth_camera", "depth", aspect_ratio));
-    viewports.push_back(viewportal::createViewport("reconstruction", "recon", aspect_ratio));
-    viewports.push_back(viewportal::createViewport("plot", "plot", aspect_ratio));
-
-    for (auto& viewport : viewports) {
-        pangolin::Display("multi").AddDisplay(viewport->getView());
-    }
-
-    pangolin::CreatePanel("ui")
-        .SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(UI_WIDTH));
-
-    for (auto& viewport : viewports) {
-        viewport->setupUI();
-    }
-
-    // Fullscreen state (matches MultiViewCamera: 0 = none, 1-4 = viewport index)
-    int fullscreen_view = 0;
-    bool state_saved = false;
-    std::array<pangolin::Attach, N_VIEWS> saved_top, saved_left, saved_right, saved_bottom;
-    std::array<bool, N_VIEWS> saved_visible;
-
-    auto saveCurrentState = [&]() {
-        for (size_t i = 0; i < N_VIEWS && i < viewports.size(); ++i) {
-            pangolin::View& v = viewports[i]->getView();
-            saved_top[i] = v.top;
-            saved_left[i] = v.left;
-            saved_right[i] = v.right;
-            saved_bottom[i] = v.bottom;
-            saved_visible[i] = v.IsShown();
-        }
-        state_saved = true;
+    const int rows = 2;
+    const int cols = 2;
+    std::vector<ViewportType> types = {
+        ViewportType::ColorImage,
+        ViewportType::DepthImage,
+        ViewportType::Reconstruction,
+        ViewportType::Plot
     };
 
-    auto exitFullscreen = [&]() {
-        if (fullscreen_view != 0 && state_saved) {
-            for (size_t i = 0; i < N_VIEWS && i < viewports.size(); ++i) {
-                pangolin::View& v = viewports[i]->getView();
-                v.SetBounds(saved_bottom[i], saved_top[i], saved_left[i], saved_right[i]);
-                v.Show(saved_visible[i]);
+    ViewPortalParams params;
+    params.window_width = 1280;
+    params.window_height = 720;
+    params.panel_width = 200;
+    params.window_title = "ViewPortal Multi-View";
+
+    ViewPortal portal(rows, cols, types, params);
+
+    // Optional: OpenCV camera for demo color frames (app-only, not part of public API)
+    cv::VideoCapture cap;
+    bool use_camera = false;
+    for (int i = 0; i < 4; ++i) {
+        if (cap.open(i)) {
+            use_camera = true;
+            break;
+        }
+    }
+    if (!use_camera) {
+        std::cout << "No camera found; using synthetic frames for color/depth viewports." << std::endl;
+    }
+
+    const int color_width = 320;
+    const int color_height = 240;
+    const int depth_width = 320;
+    const int depth_height = 240;
+    std::vector<unsigned char> color_buffer(3 * color_width * color_height);
+    std::vector<unsigned char> depth_buffer(depth_width * depth_height);
+
+    while (!portal.shouldQuit()) {
+        FrameData colorFrame;
+        colorFrame.width = color_width;
+        colorFrame.height = color_height;
+        colorFrame.format = ImageFormat::RGB8;
+
+        if (use_camera && cap.isOpened()) {
+            cv::Mat frame;
+            if (cap.read(frame)) {
+                cv::Mat rgb;
+                cv::cvtColor(frame, rgb, cv::COLOR_BGR2RGB);
+                cv::Mat resized;
+                cv::resize(rgb, resized, cv::Size(color_width, color_height));
+                if (resized.isContinuous() && resized.total() * resized.elemSize() <= color_buffer.size()) {
+                    std::memcpy(color_buffer.data(), resized.data, resized.total() * resized.elemSize());
+                }
+            } else {
+                for (size_t i = 0; i < color_buffer.size(); ++i)
+                    color_buffer[i] = static_cast<unsigned char>(rand() % 256);
             }
-            fullscreen_view = 0;
-            state_saved = false;
-        }
-    };
-
-    auto enterFullscreen = [&](int view_id) {
-        if (fullscreen_view != 0 && state_saved) {
-            exitFullscreen();
-        }
-        if (!state_saved) {
-            saveCurrentState();
-        }
-        size_t idx = static_cast<size_t>(view_id - 1);
-        if (idx < viewports.size()) {
-            // Keep view's existing aspect ratio (no SetAspect(0)) so image is never stretched
-            viewports[idx]->getView().SetBounds(0.0, 1.0, pangolin::Attach::Pix(UI_WIDTH), 1.0);
-        }
-        for (size_t i = 0; i < viewports.size(); ++i) {
-            viewports[i]->getView().Show(i == idx);
-        }
-        fullscreen_view = view_id;
-    };
-
-    // Key callbacks
-    pangolin::RegisterKeyPressCallback('`', []() {
-        pangolin::ShowConsole(pangolin::TrueFalseToggle::Toggle);
-    });
-    pangolin::RegisterKeyPressCallback('f', []() {
-        pangolin::ShowFullscreen(pangolin::TrueFalseToggle::Toggle);
-    });
-    pangolin::RegisterKeyPressCallback('p', [&]() {
-        for (auto& v : viewports) {
-            if (v->onKeyPress('p')) break;
-        }
-    });
-
-    // Double-click on a viewport to fullscreen it (or exit fullscreen if already fullscreened)
-    DoubleClickFullscreenHandler double_click_handler;
-    double_click_handler.on_double_click = [&](int view_id) {
-        if (fullscreen_view == view_id) {
-            exitFullscreen();
         } else {
-            enterFullscreen(view_id);
+            for (size_t i = 0; i < color_buffer.size(); ++i)
+                color_buffer[i] = static_cast<unsigned char>(rand() % 256);
         }
-    };
-    pangolin::Display("multi").SetHandler(&double_click_handler);
+        colorFrame.data = color_buffer.data();
+        portal.updateFrame(0, colorFrame);
 
-    while (!pangolin::ShouldQuit()) {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        for (auto& viewport : viewports) {
-            if (viewport->isShown() && viewport->getView().IsShown()) {
-                viewport->update();
-                viewport->render();
+        // Synthetic depth (radial gradient)
+        for (int y = 0; y < depth_height; ++y) {
+            for (int x = 0; x < depth_width; ++x) {
+                float dx = x - depth_width / 2.0f;
+                float dy = y - depth_height / 2.0f;
+                float dist = std::sqrt(dx * dx + dy * dy);
+                float normalized = dist / (depth_width * 0.7f);
+                depth_buffer[y * depth_width + x] = static_cast<unsigned char>(255.0f * (1.0f - std::min(1.0f, normalized)));
             }
         }
+        FrameData depthFrame;
+        depthFrame.width = depth_width;
+        depthFrame.height = depth_height;
+        depthFrame.format = ImageFormat::Luminance8;
+        depthFrame.data = depth_buffer.data();
+        portal.updateFrame(1, depthFrame);
 
-        pangolin::FinishFrame();
+        portal.step();
     }
-
-    viewports.clear();
-    pangolin::DestroyWindow("ViewPortal Multi-View");
 
     return 0;
 }

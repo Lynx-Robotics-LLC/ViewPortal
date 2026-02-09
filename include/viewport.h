@@ -1,6 +1,7 @@
 #ifndef VIEWPORT_H
 #define VIEWPORT_H
 
+#include "viewportal.h"
 #include <pangolin/display/view.h>
 #include <memory>
 #include <string>
@@ -54,13 +55,28 @@ public:
      * Return true if the key was handled.
      */
     virtual bool onKeyPress(int key) { (void)key; return false; }
+
+    /**
+     * Set user-provided frame for image viewports (internal API).
+     * Default no-op; override in ColorImage/DepthImage viewports.
+     */
+    virtual void setFrame(const FrameData& frame) { (void)frame; }
 };
 
 /**
- * Factory function to create different types of viewports.
+ * Factory function to create different types of viewports (string type).
  */
 std::unique_ptr<Viewport> createViewport(
     const std::string& type,
+    const std::string& name,
+    float aspect_ratio = 640.0f / 480.0f
+);
+
+/**
+ * Factory function to create viewport from ViewportType enum.
+ */
+std::unique_ptr<Viewport> createViewport(
+    ViewportType type,
     const std::string& name,
     float aspect_ratio = 640.0f / 480.0f
 );

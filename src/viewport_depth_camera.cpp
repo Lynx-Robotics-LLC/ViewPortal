@@ -29,7 +29,16 @@ public:
     pangolin::View& getView() override { return *view_; }
     std::string getName() const override { return name_; }
 
+    void setFrame(const FrameData& frame) override {
+        user_frame_ = frame;
+    }
+
     void update() override {
+        if (user_frame_.data != nullptr && user_frame_.width > 0 && user_frame_.height > 0) {
+            ensureTextureSize(user_frame_.width, user_frame_.height);
+            depthTexture_.Upload(user_frame_.data, GL_LUMINANCE, GL_UNSIGNED_BYTE);
+            return;
+        }
         if (show_depth_ && show_depth_->Get()) {
             setDepthImageData(depthImageArray_, width_, height_);
             depthTexture_.Upload(depthImageArray_, GL_LUMINANCE, GL_UNSIGNED_BYTE);
@@ -56,6 +65,18 @@ public:
     }
 
 private:
+    void ensureTextureSize(int w, int h) {
+        if (w == width_ && h == height_) return;
+        width_ = w;
+        height_ = h;
+        if (depthImageArray_) {
+            delete[] depthImageArray_;
+            depthImageArray_ = nullptr;
+        }
+        depthImageArray_ = new unsigned char[width_ * height_];
+        depthTexture_ = pangolin::GlTexture(width_, height_, GL_LUMINANCE, false, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE);
+    }
+
     void setDepthImageData(unsigned char* imageArray, int width, int height) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -76,6 +97,7 @@ private:
     std::unique_ptr<pangolin::Var<bool>> show_view_;
     std::unique_ptr<pangolin::Var<bool>> show_depth_;
     std::unique_ptr<pangolin::Var<double>> depth_scale_;
+    FrameData user_frame_;
 };
 
 std::unique_ptr<Viewport> createDepthCameraViewport(const std::string& name, float aspect_ratio, int width, int height) {

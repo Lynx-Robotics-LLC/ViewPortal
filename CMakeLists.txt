@@ -38,6 +38,7 @@ endif()
 # Create executable (simworld-style: app + factory + viewport sources)
 add_executable(${PROJECT_NAME}
     apps/viewportal_app.cpp
+    src/viewportal_display.cpp
     src/viewport_factory.cpp
     src/viewport_color_camera.cpp
     src/viewport_depth_camera.cpp
