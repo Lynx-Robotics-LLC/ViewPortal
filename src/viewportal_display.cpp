@@ -1,4 +1,5 @@
 #include "viewportal.h"
+#include "viewportal_params.h"
 #include "viewport.h"
 #include <pangolin/var/var.h>
 #include <pangolin/gl/gl.h>
@@ -66,6 +67,7 @@ struct DoubleClickFullscreenHandler : pangolin::Handler {
 
 struct ViewPortal::Impl {
     ViewPortalParams params;
+    std::string window_title_storage;  // when non-empty, params.window_title points into this
     std::vector<std::unique_ptr<Viewport>> viewports;
     int fullscreen_view = 0;
     bool state_saved = false;
@@ -122,17 +124,42 @@ struct ViewPortal::Impl {
     }
 };
 
+ViewPortal::ViewPortal(int rows, int cols, const std::vector<ViewportType>& types, const char* window_title)
+    : impl_(new Impl)
+{
+    LoadedParams loaded = loadParams();
+    impl_->params = loaded.viewportal;
+    impl_->window_title_storage = window_title ? window_title : "";
+    impl_->params.window_title = impl_->window_title_storage.c_str();
+    try {
+        init(rows, cols, types);
+    } catch (...) {
+        delete impl_;
+        impl_ = nullptr;
+        throw;
+    }
+}
+
 ViewPortal::ViewPortal(int rows, int cols, const std::vector<ViewportType>& types,
                        const ViewPortalParams& params)
     : impl_(new Impl)
 {
     impl_->params = params;
+    try {
+        init(rows, cols, types);
+    } catch (...) {
+        delete impl_;
+        impl_ = nullptr;
+        throw;
+    }
+}
+
+void ViewPortal::init(int rows, int cols, const std::vector<ViewportType>& types) {
+    const ViewPortalParams& params = impl_->params;
     impl_->window_name = params.window_title;
 
     const size_t n = static_cast<size_t>(rows * cols);
     if (types.size() != n) {
-        delete impl_;
-        impl_ = nullptr;
         throw std::invalid_argument("ViewPortal: types.size() must equal rows * cols");
     }
 

@@ -49,7 +49,7 @@ public:
         if (view_->IsShown() && show_depth_ && show_depth_->Get()) {
             view_->Activate();
             glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            depthTexture_.RenderToViewport();
+            depthTexture_.RenderToViewportFlipY();
         }
     }
 

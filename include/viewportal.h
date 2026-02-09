@@ -56,14 +56,23 @@ struct ViewPortalParams {
 class ViewPortal {
 public:
     /**
-     * Create a display with a grid of viewports.
+     * Create a display with a grid of viewports, loading window size and panel from config/params.cfg.
      * \param rows Number of rows in the grid.
      * \param cols Number of columns in the grid.
      * \param types Viewport type for each cell (row-major order). types.size() must equal rows * cols.
-     * \param params Optional window size, panel width, and title.
+     * \param window_title Window title string.
+     */
+    ViewPortal(int rows, int cols, const std::vector<ViewportType>& types, const char* window_title);
+
+    /**
+     * Create a display with a grid of viewports using the given parameters.
+     * \param rows Number of rows in the grid.
+     * \param cols Number of columns in the grid.
+     * \param types Viewport type for each cell (row-major order). types.size() must equal rows * cols.
+     * \param params Window size, panel width, and title.
      */
     ViewPortal(int rows, int cols, const std::vector<ViewportType>& types,
-               const ViewPortalParams& params = ViewPortalParams());
+               const ViewPortalParams& params);
 
     ~ViewPortal();
 
@@ -87,6 +96,8 @@ public:
     bool shouldQuit() const;
 
 private:
+    void init(int rows, int cols, const std::vector<ViewportType>& types);
+
     struct Impl;
     Impl* impl_;
 };

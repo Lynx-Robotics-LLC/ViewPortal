@@ -39,6 +39,7 @@ endif()
 add_executable(${PROJECT_NAME}
     apps/viewportal_app.cpp
     src/viewportal_display.cpp
+    src/viewportal_params.cpp
     src/viewport_factory.cpp
     src/viewport_color_camera.cpp
     src/viewport_depth_camera.cpp
@@ -92,3 +93,58 @@ endif()
 
 # Link against OpenCV
 target_link_libraries(${PROJECT_NAME} PRIVATE ${OpenCV_LIBS})
+
+# --- realsense_app: RealSense left IR, right IR, depth in three viewports ---
+find_package(realsense2 REQUIRED)
+
+add_executable(realsense_app
+    apps/realsense_app.cpp
+    src/viewportal_display.cpp
+    src/viewportal_params.cpp
+    src/viewport_factory.cpp
+    src/viewport_color_camera.cpp
+    src/viewport_depth_camera.cpp
+    src/viewport_reconstruction.cpp
+    src/viewport_plot.cpp
+)
+
+target_include_directories(realsense_app PRIVATE
+    include
+    ${OpenCV_INCLUDE_DIRS}
+    ${REALSENSE2_INCLUDE_DIR}
+)
+
+if(TARGET pangolin)
+    target_link_libraries(realsense_app PRIVATE pangolin)
+    get_target_property(PANGOLIN_INC pangolin INTERFACE_INCLUDE_DIRECTORIES)
+    if(PANGOLIN_INC)
+        target_include_directories(realsense_app PRIVATE ${PANGOLIN_INC})
+    endif()
+elseif(TARGET pango_display)
+    if(Pangolin_LIBRARIES)
+        target_link_libraries(realsense_app PRIVATE ${Pangolin_LIBRARIES})
+        foreach(_pango_lib ${Pangolin_LIBRARIES})
+            if(TARGET ${_pango_lib})
+                get_target_property(_inc ${_pango_lib} INTERFACE_INCLUDE_DIRECTORIES)
+                if(_inc)
+                    target_include_directories(realsense_app PRIVATE ${_inc})
+                endif()
+            endif()
+        endforeach()
+    else()
+        target_link_libraries(realsense_app PRIVATE pango_display pango_opengl pango_core pango_vars pango_image pango_plot pango_windowing)
+        foreach(_pango_lib pango_display pango_opengl pango_core pango_vars pango_image pango_plot pango_windowing)
+            if(TARGET ${_pango_lib})
+                get_target_property(_inc ${_pango_lib} INTERFACE_INCLUDE_DIRECTORIES)
+                if(_inc)
+                    target_include_directories(realsense_app PRIVATE ${_inc})
+                endif()
+            endif()
+        endforeach()
+    endif()
+else()
+    target_include_directories(realsense_app PRIVATE ${Pangolin_INCLUDE_DIRS})
+    target_link_libraries(realsense_app PRIVATE ${Pangolin_LIBRARIES})
+endif()
+
+target_link_libraries(realsense_app PRIVATE ${OpenCV_LIBS} realsense2::realsense2)
