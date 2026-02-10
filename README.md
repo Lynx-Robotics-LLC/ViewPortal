@@ -2,6 +2,8 @@
 
 Multi-viewport display library using Pangolin. Define a grid of viewports (RGB8, G8, colored depth, reconstruction, plot), push frame data from your pipeline, and build custom GUIs without touching Pangolin or OpenGL directly.
 
+![ViewPortal RealSense example GUI](docs/realsense_app.png)
+
 ## Building standalone
 
 ```bash
@@ -39,6 +41,21 @@ When added via FetchContent, only the **viewportal** library target is built (th
 1. Include `viewportal.h` (and optionally `viewportal_params.h`).
 2. Create a `ViewPortal(rows, cols, types, params)` with your viewport types (e.g. `ViewportType::G8`, `ViewportType::RGB8`, `ViewportType::ColoredDepth`).
 3. In your main loop, call `portal.updateFrame(index, frame_data)` for each image viewport and `portal.shouldQuit()` to exit.
+
+**Minimal example — visualize one image:**
+
+```cpp
+#include "viewportal.h"
+int main() {
+    viewportal::ViewPortal portal(1, 1, {viewportal::ViewportType::RGB8}, "My image");
+    viewportal::FrameData frame{640, 480, viewportal::ImageFormat::RGB8, my_rgb_pointer, 0};
+    while (!portal.shouldQuit()) {
+        portal.updateFrame(0, frame);
+    }
+    return 0;
+}
+```
+Replace `my_rgb_pointer` with a pointer to packed RGB data (640×480×3 bytes). Use `ViewportType::G8` and `ImageFormat::Luminance8` for grayscale.
 
 **Standalone example projects** (each is its own CMake project that FetchContent-pulls ViewPortal; the main repo does not reference them):
 
