@@ -32,16 +32,32 @@ struct RealsenseCapture {
 
     RealsenseCapture() {
         depth_buffer.resize(kWidth * kHeight);
+        left_ir.data = nullptr;
+        right_ir.data = nullptr;
+        depth.data = nullptr;
+        color_rgb.data = nullptr;
     }
 };
 
+/** Configure streams and start the pipeline. Returns true on success. */
+bool initRealsense(rs2::pipeline& pipe) {
+    rs2::config cfg;
+    cfg.enable_stream(RS2_STREAM_DEPTH, kWidth, kHeight, RS2_FORMAT_Z16, 30);
+    cfg.enable_stream(RS2_STREAM_INFRARED, 1, kWidth, kHeight, RS2_FORMAT_Y8, 30);
+    cfg.enable_stream(RS2_STREAM_INFRARED, 2, kWidth, kHeight, RS2_FORMAT_Y8, 30);
+    cfg.enable_stream(RS2_STREAM_COLOR, kWidth, kHeight, RS2_FORMAT_RGB8, 30);
+    try {
+        pipe.start(cfg);
+        return true;
+    } catch (const rs2::error& e) {
+        std::cerr << "RealSense error: " << e.what() << std::endl;
+        std::cerr << "Make sure the camera is connected via USB." << std::endl;
+        return false;
+    }
+}
+
 /** Capture one frameset and fill left_ir, right_ir, depth, color_rgb. Returns false on failure. */
 bool captureFrames(rs2::pipeline& pipe, RealsenseCapture& out) {
-    out.left_ir.data = nullptr;
-    out.right_ir.data = nullptr;
-    out.depth.data = nullptr;
-    out.color_rgb.data = nullptr;
-
     try {
         out.frameset = pipe.wait_for_frames();
     } catch (const rs2::error&) {
@@ -114,27 +130,16 @@ int main(int /*argc*/, char* /*argv*/[])
     using namespace viewportal;
 
     rs2::pipeline pipe;
-    rs2::config cfg;
-
-    cfg.enable_stream(RS2_STREAM_DEPTH, kWidth, kHeight, RS2_FORMAT_Z16, 30);
-    cfg.enable_stream(RS2_STREAM_INFRARED, 1, kWidth, kHeight, RS2_FORMAT_Y8, 30);
-    cfg.enable_stream(RS2_STREAM_INFRARED, 2, kWidth, kHeight, RS2_FORMAT_Y8, 30);
-    cfg.enable_stream(RS2_STREAM_COLOR, kWidth, kHeight, RS2_FORMAT_RGB8, 30);
-
-    try {
-        pipe.start(cfg);
-    } catch (const rs2::error& e) {
-        std::cerr << "RealSense error: " << e.what() << std::endl;
-        std::cerr << "Make sure the camera is connected via USB." << std::endl;
+    if (!initRealsense(pipe)) {
         return 1;
     }
 
-    // Viewport types: 0 left IR, 1 right IR, 2 depth (G8), 3 color, 4 snapshot (on 's')
+    // Viewport types: 0 left IR, 1 right IR, 2 depth (colored), 3 color, 4 snapshot (on 's')
     std::vector<ViewportType> types = {
-        ViewportType::G8,    // left IR  (Luminance8)
-        ViewportType::G8,    // right IR (Luminance8)
-        // ViewportType::G8,    // depth normalized (Luminance8)
-        ViewportType::ColoredDepth,    // depth colored
+        ViewportType::G8,
+        ViewportType::G8,
+        // ViewportType::G8,
+        ViewportType::ColoredDepth,
         ViewportType::RGB8,  // color camera (RGB8)
         ViewportType::RGB8   // snapshot (frozen on 's')
     };

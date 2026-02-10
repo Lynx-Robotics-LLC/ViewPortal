@@ -1,8 +1,6 @@
 #include "viewportal_params.h"
 #include <fstream>
 #include <sstream>
-#include <algorithm>
-#include <cctype>
 
 namespace viewportal {
 

@@ -57,7 +57,6 @@ public:
         std::string prefix = "ui." + name_ + ".";
         show_view_ = std::make_unique<pangolin::Var<bool>>(prefix + "Show", true, true);
         show_depth_ = std::make_unique<pangolin::Var<bool>>(prefix + "Show_Depth", true, true);
-        depth_scale_ = std::make_unique<pangolin::Var<double>>(prefix + "Depth_Scale", 1.0, 0.1, 5.0);
     }
 
     bool isShown() const override {
@@ -96,7 +95,6 @@ private:
     pangolin::GlTexture depthTexture_;
     std::unique_ptr<pangolin::Var<bool>> show_view_;
     std::unique_ptr<pangolin::Var<bool>> show_depth_;
-    std::unique_ptr<pangolin::Var<double>> depth_scale_;
     FrameData user_frame_;
 };
 
