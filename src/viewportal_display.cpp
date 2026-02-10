@@ -154,6 +154,7 @@ struct ViewPortal::Impl {
 
     void exitFullscreen() {
         if (fullscreen_view != 0 && state_saved) {
+            viewports[static_cast<size_t>(fullscreen_view - 1)]->getView().SetAspect(static_cast<double>(kDefaultAspect));
             for (size_t i = 0; i < viewports.size(); ++i) {
                 pangolin::View& v = viewports[i]->getView();
                 v.SetBounds(saved_bottom[i], saved_top[i], saved_left[i], saved_right[i]);
@@ -173,7 +174,11 @@ struct ViewPortal::Impl {
         }
         size_t idx = static_cast<size_t>(view_id - 1);
         if (idx < viewports.size()) {
-            viewports[idx]->getView().SetBounds(0.0, 1.0, pangolin::Attach::Pix(params.panel_width), 1.0);
+            pangolin::View& v = viewports[idx]->getView();
+            // Bounds (0,1,0,1) = fill parent "multi" (area right of panel); no extra left margin
+            v.SetBounds(0.0, 1.0, 0.0, 1.0);
+            // Negative aspect: fill width, letterbox top/bottom (avoids left/right borders on wide windows)
+            v.SetAspect(-static_cast<double>(kDefaultAspect));
         }
         for (size_t i = 0; i < viewports.size(); ++i) {
             viewports[i]->getView().Show(i == idx);
