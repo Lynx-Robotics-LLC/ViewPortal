@@ -7,6 +7,7 @@ namespace viewportal {
 // Forward declarations of factory functions from individual viewport files
 std::unique_ptr<Viewport> createRgb8Viewport(const std::string& name, float aspect_ratio);
 std::unique_ptr<Viewport> createG8Viewport(const std::string& name, float aspect_ratio, int width, int height);
+std::unique_ptr<Viewport> createColoredDepthViewport(const std::string& name, float aspect_ratio, int width, int height);
 std::unique_ptr<Viewport> createReconstructionViewport(const std::string& name, float aspect_ratio,
                                                         const pangolin::OpenGlRenderState& render_state);
 std::unique_ptr<Viewport> createPlotViewport(const std::string& name, float aspect_ratio);
@@ -31,6 +32,9 @@ std::unique_ptr<Viewport> createViewport(const std::string& type,
     if (type == "g8") {
         return createG8Viewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
     }
+    if (type == "colored_depth") {
+        return createColoredDepthViewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
+    }
     if (type == "reconstruction" || type == "recon") {
         pangolin::OpenGlRenderState render_state(
             proj,
@@ -52,6 +56,8 @@ std::unique_ptr<Viewport> createViewport(ViewportType type,
         return createRgb8Viewport(name, aspect_ratio);
     case ViewportType::G8:
         return createG8Viewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
+    case ViewportType::ColoredDepth:
+        return createColoredDepthViewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
     case ViewportType::Reconstruction: {
         pangolin::OpenGlRenderState render_state(
             getDefaultProj(),

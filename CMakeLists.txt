@@ -43,6 +43,7 @@ add_executable(${PROJECT_NAME}
     src/viewport_factory.cpp
     src/viewport_rgb8.cpp
     src/viewport_g8.cpp
+    src/viewport_colored_depth.cpp
     src/viewport_reconstruction.cpp
     src/viewport_plot.cpp
 )
@@ -104,6 +105,7 @@ add_executable(realsense_app
     src/viewport_factory.cpp
     src/viewport_rgb8.cpp
     src/viewport_g8.cpp
+    src/viewport_colored_depth.cpp
     src/viewport_reconstruction.cpp
     src/viewport_plot.cpp
 )

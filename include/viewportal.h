@@ -10,8 +10,9 @@ namespace viewportal {
  * Type of each viewport in the grid.
  */
 enum class ViewportType {
-    RGB8,   // RGB or RGBA image (ColorImage-style)
-    G8,     // Grayscale / single-channel (Luminance8)
+    RGB8,          // RGB or RGBA image (ColorImage-style)
+    G8,            // Grayscale / single-channel (Luminance8)
+    ColoredDepth,  // G8 input displayed with colormap (e.g. jet)
     Reconstruction,
     Plot,
     Count  // for bounds
@@ -92,6 +93,20 @@ public:
      * The display runs on its own thread; use this in the app loop to exit.
      */
     bool shouldQuit() const;
+
+    /**
+     * Non-blocking one-shot key check. Pass the key to watch (e.g. 's').
+     * Returns true once when that key was pressed in the GUI (then consumed);
+     * returns false otherwise. Thread-safe.
+     * Only keys passed to setKeysToWatch() can return true.
+     */
+    bool checkKey(int key) const;
+
+    /**
+     * Register key codes for checkKey(). Call after construction; pass e.g. {'s', ' '}.
+     * Keys not in this list will never be seen by checkKey().
+     */
+    void setKeysToWatch(const std::vector<int>& keys);
 
 private:
     struct Impl;

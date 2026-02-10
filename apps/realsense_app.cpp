@@ -1,9 +1,8 @@
 /*
- * RealSense four-view app (based on depthimage-example pipeline).
+ * RealSense five-view app (based on depthimage-example pipeline).
  * Connects to an Intel RealSense D435, reads left IR, right IR, depth, and
- * color streams, and displays them in four ViewPortal viewports.
- * Frame capture is separated into capture functions; the GUI just receives
- * the captured frame data.
+ * color streams, and displays them in five ViewPortal viewports.
+ * Viewport 4 shows a snapshot of the current color frame when 's' is pressed.
  */
 
 #include "viewportal.h"
@@ -19,30 +18,28 @@ using namespace viewportal;
 
 constexpr int kWidth = 640;
 constexpr int kHeight = 480;
-constexpr float kDepthMaxMeters = 0.50f;
+constexpr float kDepthMaxMeters = 1.50f;
 
 /** Holds the current frameset and buffers so FrameData pointers stay valid for one capture. */
 struct RealsenseCapture {
     rs2::frameset frameset;
-    std::vector<unsigned char> depth_rgb_buffer;
-    std::vector<unsigned char> color_rgb_buffer;
+    std::vector<unsigned char> depth_buffer;
 
     FrameData left_ir;
     FrameData right_ir;
-    FrameData depth_rgb;
+    FrameData depth;
     FrameData color_rgb;
 
     RealsenseCapture() {
-        depth_rgb_buffer.resize(3 * kWidth * kHeight);
-        color_rgb_buffer.resize(3 * kWidth * kHeight);
+        depth_buffer.resize(kWidth * kHeight);
     }
 };
 
-/** Capture one frameset and fill left_ir, right_ir, depth_rgb, color_rgb. Returns false on failure. */
+/** Capture one frameset and fill left_ir, right_ir, depth, color_rgb. Returns false on failure. */
 bool captureFrames(rs2::pipeline& pipe, RealsenseCapture& out) {
     out.left_ir.data = nullptr;
     out.right_ir.data = nullptr;
-    out.depth_rgb.data = nullptr;
+    out.depth.data = nullptr;
     out.color_rgb.data = nullptr;
 
     try {
@@ -83,19 +80,14 @@ bool captureFrames(rs2::pipeline& pipe, RealsenseCapture& out) {
         cv::Mat depth_norm;
         depth_meters.convertTo(depth_norm, CV_8UC1, 255.0f / kDepthMaxMeters, 0);
 
-        cv::Mat depth_color;
-        cv::applyColorMap(depth_norm, depth_color, cv::COLORMAP_JET);
-        cv::Mat depth_rgb;
-        cv::cvtColor(depth_color, depth_rgb, cv::COLOR_BGR2RGB);
-
-        if (depth_rgb.isContinuous() && depth_rgb.total() * depth_rgb.elemSize() <= out.depth_rgb_buffer.size()) {
-            std::memcpy(out.depth_rgb_buffer.data(), depth_rgb.data, depth_rgb.total() * depth_rgb.elemSize());
+        if (depth_norm.isContinuous() && depth_norm.total() * depth_norm.elemSize() <= out.depth_buffer.size()) {
+            std::memcpy(out.depth_buffer.data(), depth_norm.data, depth_norm.total() * depth_norm.elemSize());
         }
-        out.depth_rgb.width = dw;
-        out.depth_rgb.height = dh;
-        out.depth_rgb.format = ImageFormat::RGB8;
-        out.depth_rgb.data = out.depth_rgb_buffer.data();
-        out.depth_rgb.row_stride = 0;
+        out.depth.width = dw;
+        out.depth.height = dh;
+        out.depth.format = ImageFormat::Luminance8;
+        out.depth.data = out.depth_buffer.data();
+        out.depth.row_stride = 0;
     }
 
     rs2::video_frame color_frame = out.frameset.get_color_frame();
@@ -109,17 +101,7 @@ bool captureFrames(rs2::pipeline& pipe, RealsenseCapture& out) {
         out.color_rgb.height = ch;
         out.color_rgb.format = ImageFormat::RGB8;
         out.color_rgb.row_stride = 0;
-        if (rs_format == RS2_FORMAT_RGB8) {
-            out.color_rgb.data = color_data;
-        } else {
-            cv::Mat bgr(ch, cw, CV_8UC3, (void*)color_data);
-            cv::Mat rgb;
-            cv::cvtColor(bgr, rgb, cv::COLOR_BGR2RGB);
-            if (rgb.isContinuous() && rgb.total() * rgb.elemSize() <= out.color_rgb_buffer.size()) {
-                std::memcpy(out.color_rgb_buffer.data(), rgb.data, rgb.total() * rgb.elemSize());
-            }
-            out.color_rgb.data = out.color_rgb_buffer.data();
-        }
+        out.color_rgb.data = color_data;
     }
 
     return true;
@@ -147,28 +129,35 @@ int main(int /*argc*/, char* /*argv*/[])
         return 1;
     }
 
-    // Viewport types: 0 left IR (grayscale), 1 right IR (grayscale), 2 depth (jet RGB), 3 color (RGB)
+    // Viewport types: 0 left IR, 1 right IR, 2 depth (G8), 3 color, 4 snapshot (on 's')
     std::vector<ViewportType> types = {
         ViewportType::G8,    // left IR  (Luminance8)
         ViewportType::G8,    // right IR (Luminance8)
-        ViewportType::RGB8,  // depth colormap (RGB8)
-        ViewportType::RGB8   // color camera (RGB8)
+        // ViewportType::G8,    // depth normalized (Luminance8)
+        ViewportType::ColoredDepth,    // depth colored
+        ViewportType::RGB8,  // color camera (RGB8)
+        ViewportType::RGB8   // snapshot (frozen on 's')
     };
 
-    ViewPortal portal(1, 4, types, "ViewPortal RealSense");
+    ViewPortalParams params;
+    params.window_title = "ViewPortal RealSense";
+    ViewPortal portal(1, 5, types, params);
+    portal.setKeysToWatch({'s'});
 
     RealsenseCapture capture;
     while (!portal.shouldQuit()) {
         if (!captureFrames(pipe, capture))
             continue;
-        // if (capture.left_ir.data)
-        //     portal.updateFrame(0, capture.left_ir);
+        if (capture.left_ir.data)
+            portal.updateFrame(0, capture.left_ir);
         if (capture.right_ir.data)
             portal.updateFrame(1, capture.right_ir);
-        if (capture.depth_rgb.data)
-            portal.updateFrame(2, capture.depth_rgb);
+        if (capture.depth.data)
+            portal.updateFrame(2, capture.depth);
         if (capture.color_rgb.data)
             portal.updateFrame(3, capture.color_rgb);
+        if (portal.checkKey('s') && capture.color_rgb.data)
+            portal.updateFrame(4, capture.color_rgb);
     }
 
     pipe.stop();

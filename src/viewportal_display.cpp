@@ -20,6 +20,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <cstring>
+#include <set>
 
 namespace viewportal {
 
@@ -43,7 +44,7 @@ static size_t frameByteSize(const FrameData& f) {
 }
 
 static bool isImageViewport(ViewportType t) {
-    return t == ViewportType::RGB8 || t == ViewportType::G8;
+    return t == ViewportType::RGB8 || t == ViewportType::G8 || t == ViewportType::ColoredDepth;
 }
 
 struct ViewportFrameState {
@@ -60,10 +61,17 @@ struct DoubleClickFullscreenHandler : pangolin::Handler {
     static constexpr int kDoubleClickSlopPx = 8;
 
     std::function<void(int view_id)> on_double_click;
+    std::function<void(int)> on_key_press;
     double last_click_time = 0.0;
     int last_click_x = 0;
     int last_click_y = 0;
     int last_click_view_id = 0;
+
+    void Keyboard(pangolin::View& view, unsigned char key, int x, int y, bool pressed) override {
+        if (pressed && on_key_press)
+            on_key_press(static_cast<int>(key));
+        pangolin::Handler::Keyboard(view, key, x, y, pressed);
+    }
 
     void Mouse(pangolin::View& view, pangolin::MouseButton button, int x, int y, bool pressed, int button_state) override {
         (void)button_state;
@@ -117,8 +125,14 @@ struct ViewPortal::Impl {
     std::mutex init_mutex;
     std::condition_variable init_cv;
 
+    mutable std::mutex key_mutex;
+    mutable std::set<int> pending_keys;
+
     int init_rows = 0;
     int init_cols = 0;
+    std::vector<int> keys_to_watch;
+    bool keys_to_watch_pending = false;
+    std::set<int> keys_registered;  // only touched on display thread
 
     void saveCurrentState() {
         const size_t n = viewports.size();
@@ -218,6 +232,10 @@ void ViewPortal::initOnDisplayThread(Impl* impl) {
             impl->enterFullscreen(view_id);
         }
     };
+    impl->double_click_handler->on_key_press = [impl](int key) {
+        std::lock_guard<std::mutex> lock(impl->key_mutex);
+        impl->pending_keys.insert(key);
+    };
     pangolin::Display("multi").SetHandler(impl->double_click_handler.get());
 
     pangolin::RegisterKeyPressCallback('p', [impl]() {
@@ -225,9 +243,25 @@ void ViewPortal::initOnDisplayThread(Impl* impl) {
             if (v->onKeyPress('p')) break;
         }
     });
+
 }
 
 void ViewPortal::stepFrame(Impl* impl) {
+    {
+        std::lock_guard<std::mutex> lock(impl->key_mutex);
+        if (impl->keys_to_watch_pending) {
+            impl->keys_to_watch_pending = false;
+            for (int key : impl->keys_to_watch) {
+                if (impl->keys_registered.count(key) == 0) {
+                    impl->keys_registered.insert(key);
+                    pangolin::RegisterKeyPressCallback(key, [impl, key]() {
+                        std::lock_guard<std::mutex> lk(impl->key_mutex);
+                        impl->pending_keys.insert(key);
+                    });
+                }
+            }
+        }
+    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     const size_t n = impl->viewports.size();
     for (size_t i = 0; i < n; ++i) {
@@ -384,6 +418,24 @@ void ViewPortal::updateFrame(size_t viewportIndex, const FrameData& frame) {
 
 bool ViewPortal::shouldQuit() const {
     return impl_ ? impl_->quit_requested.load(std::memory_order_acquire) : true;
+}
+
+bool ViewPortal::checkKey(int key) const {
+    if (!impl_) return false;
+    std::lock_guard<std::mutex> lock(impl_->key_mutex);
+    auto it = impl_->pending_keys.find(key);
+    if (it != impl_->pending_keys.end()) {
+        impl_->pending_keys.erase(it);
+        return true;
+    }
+    return false;
+}
+
+void ViewPortal::setKeysToWatch(const std::vector<int>& keys) {
+    if (!impl_) return;
+    std::lock_guard<std::mutex> lock(impl_->key_mutex);
+    impl_->keys_to_watch = keys;
+    impl_->keys_to_watch_pending = true;
 }
 
 } // namespace viewportal
