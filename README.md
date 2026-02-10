@@ -42,20 +42,32 @@ When added via FetchContent, only the **viewportal** library target is built (th
 2. Create a `ViewPortal(rows, cols, types, params)` with your viewport types (e.g. `ViewportType::G8`, `ViewportType::RGB8`, `ViewportType::ColoredDepth`).
 3. In your main loop, call `portal.updateFrame(index, frame_data)` for each image viewport and `portal.shouldQuit()` to exit.
 
-**Minimal example — visualize one image:**
+**Minimal example — visualize one image (runnable as-is; link with ViewPortal and Pangolin):**
 
 ```cpp
 #include "viewportal.h"
+#include <vector>
+
 int main() {
+    const int w = 640, h = 480;
+    std::vector<unsigned char> rgb(w * h * 3);
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            rgb[(y * w + x) * 3 + 0] = (unsigned char)(255 * x / w);  // R
+            rgb[(y * w + x) * 3 + 1] = (unsigned char)(255 * y / h);  // G
+            rgb[(y * w + x) * 3 + 2] = 128;                           // B
+        }
+
     viewportal::ViewPortal portal(1, 1, {viewportal::ViewportType::RGB8}, "My image");
-    viewportal::FrameData frame{640, 480, viewportal::ImageFormat::RGB8, my_rgb_pointer, 0};
-    while (!portal.shouldQuit()) {
+    viewportal::FrameData frame{w, h, viewportal::ImageFormat::RGB8, rgb.data(), 0};
+
+    while (!portal.shouldQuit())
         portal.updateFrame(0, frame);
-    }
+
     return 0;
 }
 ```
-Replace `my_rgb_pointer` with a pointer to packed RGB data (640×480×3 bytes). Use `ViewportType::G8` and `ImageFormat::Luminance8` for grayscale.
+This draws a red–green gradient. For grayscale, use `ViewportType::G8`, `ImageFormat::Luminance8`, and a single byte per pixel.
 
 **Standalone example projects** (each is its own CMake project that FetchContent-pulls ViewPortal; the main repo does not reference them):
 
