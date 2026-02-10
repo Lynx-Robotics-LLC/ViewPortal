@@ -139,7 +139,7 @@ int main(int /*argc*/, char* /*argv*/[])
     ViewPortalParams params;
     params.window_title = "ViewPortal RealSense (Example)";
     ViewPortal portal(1, 5, types, params);
-    portal.setKeysToWatch({'s'});
+    portal.setKeysToWatch({' '});
 
     RealsenseCapture capture;
     while (!portal.shouldQuit()) {

@@ -13,16 +13,16 @@ public:
         : name_(name),
           width_(width),
           height_(height),
-          depthImageArray_(nullptr) {
-        depthImageArray_ = new unsigned char[width_ * height_];
-        depthTexture_ = pangolin::GlTexture(width_, height_, GL_LUMINANCE, false, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE);
+          imageBuffer_(nullptr) {
+        imageBuffer_ = new unsigned char[width_ * height_];
+        luminanceTexture_ = pangolin::GlTexture(width_, height_, GL_LUMINANCE, false, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE);
         view_ = &pangolin::Display(name).SetAspect(aspect_ratio);
     }
 
     ~G8Viewport() override {
-        if (depthImageArray_) {
-            delete[] depthImageArray_;
-            depthImageArray_ = nullptr;
+        if (imageBuffer_) {
+            delete[] imageBuffer_;
+            imageBuffer_ = nullptr;
         }
     }
 
@@ -36,27 +36,24 @@ public:
     void update() override {
         if (user_frame_.data != nullptr && user_frame_.width > 0 && user_frame_.height > 0) {
             ensureTextureSize(user_frame_.width, user_frame_.height);
-            depthTexture_.Upload(user_frame_.data, GL_LUMINANCE, GL_UNSIGNED_BYTE);
+            luminanceTexture_.Upload(user_frame_.data, GL_LUMINANCE, GL_UNSIGNED_BYTE);
             return;
         }
-        if (show_depth_ && show_depth_->Get()) {
-            setDepthImageData(depthImageArray_, width_, height_);
-            depthTexture_.Upload(depthImageArray_, GL_LUMINANCE, GL_UNSIGNED_BYTE);
-        }
+        setPlaceholderImageData(imageBuffer_, width_, height_);
+        luminanceTexture_.Upload(imageBuffer_, GL_LUMINANCE, GL_UNSIGNED_BYTE);
     }
 
     void render() override {
-        if (view_->IsShown() && show_depth_ && show_depth_->Get()) {
+        if (view_->IsShown()) {
             view_->Activate();
             glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-            depthTexture_.RenderToViewportFlipY();
+            luminanceTexture_.RenderToViewportFlipY();
         }
     }
 
     void setupUI() override {
         std::string prefix = "ui." + name_ + ".";
         show_view_ = std::make_unique<pangolin::Var<bool>>(prefix + "Show", true, true);
-        show_depth_ = std::make_unique<pangolin::Var<bool>>(prefix + "Show_Depth", true, true);
     }
 
     bool isShown() const override {
@@ -68,21 +65,21 @@ private:
         if (w == width_ && h == height_) return;
         width_ = w;
         height_ = h;
-        if (depthImageArray_) {
-            delete[] depthImageArray_;
-            depthImageArray_ = nullptr;
+        if (imageBuffer_) {
+            delete[] imageBuffer_;
+            imageBuffer_ = nullptr;
         }
-        depthImageArray_ = new unsigned char[width_ * height_];
-        depthTexture_ = pangolin::GlTexture(width_, height_, GL_LUMINANCE, false, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE);
+        imageBuffer_ = new unsigned char[width_ * height_];
+        luminanceTexture_ = pangolin::GlTexture(width_, height_, GL_LUMINANCE, false, 0, GL_LUMINANCE, GL_UNSIGNED_BYTE);
     }
 
-    void setDepthImageData(unsigned char* imageArray, int width, int height) {
+    void setPlaceholderImageData(unsigned char* imageArray, int width, int height) {
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
                 float dist = sqrt((x - width / 2.0f) * (x - width / 2.0f) + (y - height / 2.0f) * (y - height / 2.0f));
                 float normalized = dist / (width * 0.7f);
-                unsigned char depth = (unsigned char)(255.0f * (1.0f - normalized));
-                imageArray[y * width + x] = depth;
+                unsigned char value = (unsigned char)(255.0f * (1.0f - normalized));
+                imageArray[y * width + x] = value;
             }
         }
     }
@@ -91,10 +88,9 @@ private:
     pangolin::View* view_;
     int width_;
     int height_;
-    unsigned char* depthImageArray_;
-    pangolin::GlTexture depthTexture_;
+    unsigned char* imageBuffer_;
+    pangolin::GlTexture luminanceTexture_;
     std::unique_ptr<pangolin::Var<bool>> show_view_;
-    std::unique_ptr<pangolin::Var<bool>> show_depth_;
     FrameData user_frame_;
 };
 
