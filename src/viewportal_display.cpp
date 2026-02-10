@@ -15,12 +15,45 @@
 #include <cmath>
 #include <string>
 #include <stdexcept>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <cstring>
 
 namespace viewportal {
 
 namespace {
 
 constexpr float kDefaultAspect = 640.0f / 480.0f;
+
+static int bytesPerPixel(ImageFormat fmt) {
+    switch (fmt) {
+        case ImageFormat::RGB8: return 3;
+        case ImageFormat::RGBA8: return 4;
+        case ImageFormat::Luminance8: return 1;
+        default: return 3;
+    }
+}
+
+static size_t frameByteSize(const FrameData& f) {
+    if (f.row_stride != 0)
+        return static_cast<size_t>(f.height) * static_cast<size_t>(f.row_stride);
+    return static_cast<size_t>(f.width) * static_cast<size_t>(f.height) * bytesPerPixel(f.format);
+}
+
+static bool isImageViewport(ViewportType t) {
+    return t == ViewportType::RGB8 || t == ViewportType::G8;
+}
+
+struct ViewportFrameState {
+    std::vector<std::uint8_t> buffers[2];
+    int width[2] = {0, 0};
+    int height[2] = {0, 0};
+    ImageFormat format[2] = {ImageFormat::RGB8, ImageFormat::RGB8};
+    std::atomic<int> write_index{0};
+    std::mutex mutex;
+};
 
 struct DoubleClickFullscreenHandler : pangolin::Handler {
     static constexpr double kDoubleClickTimeSec = 0.35;
@@ -68,13 +101,24 @@ struct DoubleClickFullscreenHandler : pangolin::Handler {
 struct ViewPortal::Impl {
     ViewPortalParams params;
     std::string window_title_storage;  // when non-empty, params.window_title points into this
+    std::vector<ViewportType> viewport_types;  // stored for updateFrame image check
     std::vector<std::unique_ptr<Viewport>> viewports;
+    std::vector<std::unique_ptr<ViewportFrameState>> frame_states;  // one per viewport; used only for image viewports
     int fullscreen_view = 0;
     bool state_saved = false;
     std::vector<pangolin::Attach> saved_top, saved_left, saved_right, saved_bottom;
     std::vector<bool> saved_visible;
     std::unique_ptr<DoubleClickFullscreenHandler> double_click_handler;
     std::string window_name;
+
+    std::thread display_thread;
+    std::atomic<bool> quit_requested{false};
+    std::atomic<bool> init_done{false};
+    std::mutex init_mutex;
+    std::condition_variable init_cv;
+
+    int init_rows = 0;
+    int init_cols = 0;
 
     void saveCurrentState() {
         const size_t n = viewports.size();
@@ -124,44 +168,13 @@ struct ViewPortal::Impl {
     }
 };
 
-ViewPortal::ViewPortal(int rows, int cols, const std::vector<ViewportType>& types, const char* window_title)
-    : impl_(new Impl)
-{
-    LoadedParams loaded = loadParams();
-    impl_->params = loaded.viewportal;
-    impl_->window_title_storage = window_title ? window_title : "";
-    impl_->params.window_title = impl_->window_title_storage.c_str();
-    try {
-        init(rows, cols, types);
-    } catch (...) {
-        delete impl_;
-        impl_ = nullptr;
-        throw;
-    }
-}
-
-ViewPortal::ViewPortal(int rows, int cols, const std::vector<ViewportType>& types,
-                       const ViewPortalParams& params)
-    : impl_(new Impl)
-{
-    impl_->params = params;
-    try {
-        init(rows, cols, types);
-    } catch (...) {
-        delete impl_;
-        impl_ = nullptr;
-        throw;
-    }
-}
-
-void ViewPortal::init(int rows, int cols, const std::vector<ViewportType>& types) {
-    const ViewPortalParams& params = impl_->params;
-    impl_->window_name = params.window_title;
-
+void ViewPortal::initOnDisplayThread(Impl* impl) {
+    const ViewPortalParams& params = impl->params;
+    impl->window_name = params.window_title;
+    const int rows = impl->init_rows;
+    const int cols = impl->init_cols;
+    const std::vector<ViewportType>& types = impl->viewport_types;
     const size_t n = static_cast<size_t>(rows * cols);
-    if (types.size() != n) {
-        throw std::invalid_argument("ViewPortal: types.size() must equal rows * cols");
-    }
 
     pangolin::CreateWindowAndBind(params.window_title, params.window_width, params.window_height);
 
@@ -176,17 +189,17 @@ void ViewPortal::init(int rows, int cols, const std::vector<ViewportType>& types
     const float aspect = kDefaultAspect;
     for (size_t i = 0; i < n; ++i) {
         std::string name = "v" + std::to_string(i);
-        impl_->viewports.push_back(createViewport(types[i], name, aspect));
+        impl->viewports.push_back(createViewport(types[i], name, aspect));
     }
 
-    for (auto& v : impl_->viewports) {
+    for (auto& v : impl->viewports) {
         pangolin::Display("multi").AddDisplay(v->getView());
     }
 
     pangolin::CreatePanel("ui")
         .SetBounds(0.0, 1.0, 0.0, pangolin::Attach::Pix(params.panel_width));
 
-    for (auto& v : impl_->viewports) {
+    for (auto& v : impl->viewports) {
         v->setupUI();
     }
 
@@ -197,51 +210,180 @@ void ViewPortal::init(int rows, int cols, const std::vector<ViewportType>& types
         pangolin::ShowFullscreen(pangolin::TrueFalseToggle::Toggle);
     });
 
-    impl_->double_click_handler = std::make_unique<DoubleClickFullscreenHandler>();
-    impl_->double_click_handler->on_double_click = [this](int view_id) {
-        if (impl_->fullscreen_view == view_id) {
-            impl_->exitFullscreen();
+    impl->double_click_handler = std::make_unique<DoubleClickFullscreenHandler>();
+    impl->double_click_handler->on_double_click = [impl](int view_id) {
+        if (impl->fullscreen_view == view_id) {
+            impl->exitFullscreen();
         } else {
-            impl_->enterFullscreen(view_id);
+            impl->enterFullscreen(view_id);
         }
     };
-    pangolin::Display("multi").SetHandler(impl_->double_click_handler.get());
+    pangolin::Display("multi").SetHandler(impl->double_click_handler.get());
 
-    pangolin::RegisterKeyPressCallback('p', [this]() {
-        for (auto& v : impl_->viewports) {
+    pangolin::RegisterKeyPressCallback('p', [impl]() {
+        for (auto& v : impl->viewports) {
             if (v->onKeyPress('p')) break;
         }
     });
 }
 
+void ViewPortal::stepFrame(Impl* impl) {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    const size_t n = impl->viewports.size();
+    for (size_t i = 0; i < n; ++i) {
+        Viewport* v = impl->viewports[i].get();
+        if (!v->isShown() || !v->getView().IsShown())
+            continue;
+        if (i < impl->frame_states.size() && isImageViewport(impl->viewport_types[i])) {
+            ViewportFrameState& fs = *impl->frame_states[i];
+            const int read_index = 1 - fs.write_index.load(std::memory_order_acquire);
+            if (fs.width[read_index] > 0 && fs.height[read_index] > 0 &&
+                fs.buffers[read_index].size() > 0) {
+                FrameData fd;
+                fd.width = fs.width[read_index];
+                fd.height = fs.height[read_index];
+                fd.format = fs.format[read_index];
+                fd.data = fs.buffers[read_index].data();
+                fd.row_stride = 0;
+                v->setFrame(fd);
+            }
+        }
+        v->update();
+        v->render();
+    }
+    pangolin::FinishFrame();
+}
+
+void ViewPortal::displayThreadMain(Impl* impl) {
+    try {
+        initOnDisplayThread(impl);
+    } catch (...) {
+        impl->init_done = true;
+        impl->init_cv.notify_one();
+        impl->quit_requested = true;
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lock(impl->init_mutex);
+        impl->init_done = true;
+    }
+    impl->init_cv.notify_one();
+
+    while (!impl->quit_requested && !pangolin::ShouldQuit()) {
+        stepFrame(impl);
+    }
+    impl->quit_requested = true;
+
+    impl->viewports.clear();
+    impl->double_click_handler.reset();
+    pangolin::DestroyWindow(impl->window_name);
+}
+
+ViewPortal::ViewPortal(int rows, int cols, const std::vector<ViewportType>& types, const char* window_title)
+    : impl_(new Impl)
+{
+    LoadedParams loaded = loadParams();
+    impl_->params = loaded.viewportal;
+    impl_->window_title_storage = window_title ? window_title : "";
+    impl_->params.window_title = impl_->window_title_storage.c_str();
+    const size_t n = static_cast<size_t>(rows * cols);
+    if (types.size() != n) {
+        delete impl_;
+        impl_ = nullptr;
+        throw std::invalid_argument("ViewPortal: types.size() must equal rows * cols");
+    }
+    impl_->init_rows = rows;
+    impl_->init_cols = cols;
+    impl_->viewport_types = types;
+    impl_->frame_states.resize(n);
+    for (size_t i = 0; i < n; ++i)
+        impl_->frame_states[i] = std::make_unique<ViewportFrameState>();
+    impl_->display_thread = std::thread(&ViewPortal::displayThreadMain, impl_);
+    {
+        std::unique_lock<std::mutex> lock(impl_->init_mutex);
+        impl_->init_cv.wait(lock, [this]() { return impl_->init_done.load(); });
+    }
+    if (impl_->quit_requested) {
+        if (impl_->display_thread.joinable())
+            impl_->display_thread.join();
+        delete impl_;
+        impl_ = nullptr;
+        throw std::runtime_error("ViewPortal: display thread failed to initialize");
+    }
+}
+
+ViewPortal::ViewPortal(int rows, int cols, const std::vector<ViewportType>& types,
+                       const ViewPortalParams& params)
+    : impl_(new Impl)
+{
+    impl_->params = params;
+    const size_t n = static_cast<size_t>(rows * cols);
+    if (types.size() != n) {
+        delete impl_;
+        impl_ = nullptr;
+        throw std::invalid_argument("ViewPortal: types.size() must equal rows * cols");
+    }
+    impl_->init_rows = rows;
+    impl_->init_cols = cols;
+    impl_->viewport_types = types;
+    impl_->frame_states.resize(n);
+    for (size_t i = 0; i < n; ++i)
+        impl_->frame_states[i] = std::make_unique<ViewportFrameState>();
+    impl_->display_thread = std::thread(&ViewPortal::displayThreadMain, impl_);
+    {
+        std::unique_lock<std::mutex> lock(impl_->init_mutex);
+        impl_->init_cv.wait(lock, [this]() { return impl_->init_done.load(); });
+    }
+    if (impl_->quit_requested) {
+        if (impl_->display_thread.joinable())
+            impl_->display_thread.join();
+        delete impl_;
+        impl_ = nullptr;
+        throw std::runtime_error("ViewPortal: display thread failed to initialize");
+    }
+}
+
 ViewPortal::~ViewPortal() {
     if (impl_) {
-        impl_->viewports.clear();
-        pangolin::DestroyWindow(impl_->window_name);
+        impl_->quit_requested = true;
+        if (impl_->display_thread.joinable())
+            impl_->display_thread.join();
     }
     delete impl_;
     impl_ = nullptr;
 }
 
 void ViewPortal::updateFrame(size_t viewportIndex, const FrameData& frame) {
-    if (!impl_ || viewportIndex >= impl_->viewports.size()) return;
-    impl_->viewports[viewportIndex]->setFrame(frame);
-}
+    if (!impl_ || viewportIndex >= impl_->frame_states.size()) return;
+    if (!isImageViewport(impl_->viewport_types[viewportIndex])) return;
+    if (!frame.data || frame.width <= 0 || frame.height <= 0) return;
 
-void ViewPortal::step() {
-    if (!impl_) return;
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    for (auto& v : impl_->viewports) {
-        if (v->isShown() && v->getView().IsShown()) {
-            v->update();
-            v->render();
-        }
+    ViewportFrameState& fs = *impl_->frame_states[viewportIndex];
+    const size_t byte_size = frameByteSize(frame);
+    if (byte_size == 0) return;
+
+    std::lock_guard<std::mutex> lock(fs.mutex);
+    const int w = fs.write_index.load(std::memory_order_relaxed);
+    if (fs.buffers[w].size() < byte_size)
+        fs.buffers[w].resize(byte_size);
+    const int bpp = bytesPerPixel(frame.format);
+    const size_t row_bytes = static_cast<size_t>(frame.width) * bpp;
+    if (frame.row_stride != 0) {
+        const int stride = frame.row_stride;
+        const std::uint8_t* src = static_cast<const std::uint8_t*>(frame.data);
+        for (int y = 0; y < frame.height; ++y)
+            std::memcpy(fs.buffers[w].data() + static_cast<size_t>(y) * row_bytes, src + static_cast<size_t>(y) * stride, row_bytes);
+    } else {
+        std::memcpy(fs.buffers[w].data(), frame.data, byte_size);
     }
-    pangolin::FinishFrame();
+    fs.width[w] = frame.width;
+    fs.height[w] = frame.height;
+    fs.format[w] = frame.format;
+    fs.write_index.store(1 - w, std::memory_order_release);
 }
 
 bool ViewPortal::shouldQuit() const {
-    return impl_ ? pangolin::ShouldQuit() : true;
+    return impl_ ? impl_->quit_requested.load(std::memory_order_acquire) : true;
 }
 
 } // namespace viewportal

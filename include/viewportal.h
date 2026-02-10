@@ -10,8 +10,8 @@ namespace viewportal {
  * Type of each viewport in the grid.
  */
 enum class ViewportType {
-    ColorImage,
-    DepthImage,
+    RGB8,   // RGB or RGBA image (ColorImage-style)
+    G8,     // Grayscale / single-channel (Luminance8)
     Reconstruction,
     Plot,
     Count  // for bounds
@@ -28,7 +28,8 @@ enum class ImageFormat {
 
 /**
  * Non-owning descriptor for a single image frame.
- * User provides a pointer to image data; the buffer is not copied.
+ * When passed to updateFrame(), the library copies the pixel data; the caller
+ * may reuse or free the buffer immediately after updateFrame() returns.
  */
 struct FrameData {
     int width = 0;
@@ -80,26 +81,25 @@ public:
     ViewPortal& operator=(const ViewPortal&) = delete;
 
     /**
-     * Set the next frame to display in an image viewport (ColorImage or DepthImage).
-     * No-op for other viewport types. Data is used at next step().
+     * Set the next frame to display in an image viewport (RGB8 or G8).
+     * Takes a copy of the frame data; the display runs on its own thread and shows
+     * the latest copied frame. No-op for other viewport types.
      */
     void updateFrame(size_t viewportIndex, const FrameData& frame);
 
     /**
-     * Run one display frame: update viewports, render, swap.
-     */
-    void step();
-
-    /**
-     * Return true if the user requested to close the window.
+     * Return true if the user requested to close the window (thread-safe).
+     * The display runs on its own thread; use this in the app loop to exit.
      */
     bool shouldQuit() const;
 
 private:
-    void init(int rows, int cols, const std::vector<ViewportType>& types);
-
     struct Impl;
     Impl* impl_;
+
+    static void displayThreadMain(Impl* impl);
+    static void initOnDisplayThread(Impl* impl);
+    static void stepFrame(Impl* impl);
 };
 
 } // namespace viewportal

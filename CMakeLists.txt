@@ -41,8 +41,8 @@ add_executable(${PROJECT_NAME}
     src/viewportal_display.cpp
     src/viewportal_params.cpp
     src/viewport_factory.cpp
-    src/viewport_color_camera.cpp
-    src/viewport_depth_camera.cpp
+    src/viewport_rgb8.cpp
+    src/viewport_g8.cpp
     src/viewport_reconstruction.cpp
     src/viewport_plot.cpp
 )
@@ -102,8 +102,8 @@ add_executable(realsense_app
     src/viewportal_display.cpp
     src/viewportal_params.cpp
     src/viewport_factory.cpp
-    src/viewport_color_camera.cpp
-    src/viewport_depth_camera.cpp
+    src/viewport_rgb8.cpp
+    src/viewport_g8.cpp
     src/viewport_reconstruction.cpp
     src/viewport_plot.cpp
 )

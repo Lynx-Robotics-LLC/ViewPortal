@@ -7,9 +7,9 @@
 
 namespace viewportal {
 
-class ColorCameraViewport : public Viewport {
+class Rgb8Viewport : public Viewport {
 public:
-    ColorCameraViewport(const std::string& name, float aspect_ratio)
+    Rgb8Viewport(const std::string& name, float aspect_ratio)
         : name_(name),
           width_(320),
           height_(240),
@@ -20,7 +20,7 @@ public:
         view_ = &pangolin::Display(name).SetAspect(aspect_ratio);
     }
 
-    ~ColorCameraViewport() override {
+    ~Rgb8Viewport() override {
         if (colorImageArray_) {
             delete[] colorImageArray_;
             colorImageArray_ = nullptr;
@@ -104,8 +104,8 @@ private:
     std::unique_ptr<pangolin::Var<bool>> show_view_;
 };
 
-std::unique_ptr<Viewport> createColorCameraViewport(const std::string& name, float aspect_ratio) {
-    return std::make_unique<ColorCameraViewport>(name, aspect_ratio);
+std::unique_ptr<Viewport> createRgb8Viewport(const std::string& name, float aspect_ratio) {
+    return std::make_unique<Rgb8Viewport>(name, aspect_ratio);
 }
 
 } // namespace viewportal

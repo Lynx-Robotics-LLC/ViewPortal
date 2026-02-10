@@ -7,9 +7,9 @@
 
 namespace viewportal {
 
-class DepthCameraViewport : public Viewport {
+class G8Viewport : public Viewport {
 public:
-    DepthCameraViewport(const std::string& name, float aspect_ratio, int width, int height)
+    G8Viewport(const std::string& name, float aspect_ratio, int width, int height)
         : name_(name),
           width_(width),
           height_(height),
@@ -19,7 +19,7 @@ public:
         view_ = &pangolin::Display(name).SetAspect(aspect_ratio);
     }
 
-    ~DepthCameraViewport() override {
+    ~G8Viewport() override {
         if (depthImageArray_) {
             delete[] depthImageArray_;
             depthImageArray_ = nullptr;
@@ -100,8 +100,8 @@ private:
     FrameData user_frame_;
 };
 
-std::unique_ptr<Viewport> createDepthCameraViewport(const std::string& name, float aspect_ratio, int width, int height) {
-    return std::make_unique<DepthCameraViewport>(name, aspect_ratio, width, height);
+std::unique_ptr<Viewport> createG8Viewport(const std::string& name, float aspect_ratio, int width, int height) {
+    return std::make_unique<G8Viewport>(name, aspect_ratio, width, height);
 }
 
 } // namespace viewportal

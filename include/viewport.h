@@ -58,7 +58,7 @@ public:
 
     /**
      * Set user-provided frame for image viewports (internal API).
-     * Default no-op; override in ColorImage/DepthImage viewports.
+     * Default no-op; override in RGB8/G8 viewports.
      */
     virtual void setFrame(const FrameData& frame) { (void)frame; }
 };

@@ -5,8 +5,8 @@
 namespace viewportal {
 
 // Forward declarations of factory functions from individual viewport files
-std::unique_ptr<Viewport> createColorCameraViewport(const std::string& name, float aspect_ratio);
-std::unique_ptr<Viewport> createDepthCameraViewport(const std::string& name, float aspect_ratio, int width, int height);
+std::unique_ptr<Viewport> createRgb8Viewport(const std::string& name, float aspect_ratio);
+std::unique_ptr<Viewport> createG8Viewport(const std::string& name, float aspect_ratio, int width, int height);
 std::unique_ptr<Viewport> createReconstructionViewport(const std::string& name, float aspect_ratio,
                                                         const pangolin::OpenGlRenderState& render_state);
 std::unique_ptr<Viewport> createPlotViewport(const std::string& name, float aspect_ratio);
@@ -25,11 +25,11 @@ std::unique_ptr<Viewport> createViewport(const std::string& type,
                                          float aspect_ratio) {
     pangolin::OpenGlMatrix proj = getDefaultProj();
 
-    if (type == "color_camera" || type == "color") {
-        return createColorCameraViewport(name, aspect_ratio);
+    if (type == "rgb8") {
+        return createRgb8Viewport(name, aspect_ratio);
     }
-    if (type == "depth_camera" || type == "depth") {
-        return createDepthCameraViewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
+    if (type == "g8") {
+        return createG8Viewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
     }
     if (type == "reconstruction" || type == "recon") {
         pangolin::OpenGlRenderState render_state(
@@ -48,10 +48,10 @@ std::unique_ptr<Viewport> createViewport(ViewportType type,
                                          const std::string& name,
                                          float aspect_ratio) {
     switch (type) {
-    case ViewportType::ColorImage:
-        return createColorCameraViewport(name, aspect_ratio);
-    case ViewportType::DepthImage:
-        return createDepthCameraViewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
+    case ViewportType::RGB8:
+        return createRgb8Viewport(name, aspect_ratio);
+    case ViewportType::G8:
+        return createG8Viewport(name, aspect_ratio, kDefaultWidth, kDefaultHeight);
     case ViewportType::Reconstruction: {
         pangolin::OpenGlRenderState render_state(
             getDefaultProj(),
