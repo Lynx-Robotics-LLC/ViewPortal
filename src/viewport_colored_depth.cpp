@@ -2,11 +2,39 @@
 #include <pangolin/display/display.h>
 #include <pangolin/gl/gl.h>
 #include <pangolin/var/var.h>
-#include <opencv2/opencv.hpp>
 #include <memory>
 #include <cstring>
+#include <cmath>
+#include <algorithm>
 
 namespace viewportal {
+
+namespace {
+
+// JET-like colormap LUT: 256 entries, RGB (same order as GL_RGB)
+void buildJetRgbLut(unsigned char* lut) {
+    for (int i = 0; i < 256; ++i) {
+        float t = i / 255.0f;
+        float r = std::clamp(1.5f - 4.0f * std::abs(t - 0.75f), 0.0f, 1.0f);
+        float g = std::clamp(1.5f - 4.0f * std::abs(t - 0.5f),  0.0f, 1.0f);
+        float b = std::clamp(1.5f - 4.0f * std::abs(t - 0.25f), 0.0f, 1.0f);
+        lut[i * 3 + 0] = static_cast<unsigned char>(r * 255.0f);
+        lut[i * 3 + 1] = static_cast<unsigned char>(g * 255.0f);
+        lut[i * 3 + 2] = static_cast<unsigned char>(b * 255.0f);
+    }
+}
+
+void applyJetToG8(const unsigned char* g8, int width, int height, unsigned char* rgb, const unsigned char* lut) {
+    const size_t n = static_cast<size_t>(width) * height;
+    for (size_t i = 0; i < n; ++i) {
+        unsigned char v = g8[i];
+        rgb[i * 3 + 0] = lut[v * 3 + 0];
+        rgb[i * 3 + 1] = lut[v * 3 + 1];
+        rgb[i * 3 + 2] = lut[v * 3 + 2];
+    }
+}
+
+} // namespace
 
 class ColoredDepthViewport : public Viewport {
 public:
@@ -38,15 +66,10 @@ public:
         if (user_frame_.data != nullptr && user_frame_.width > 0 && user_frame_.height > 0) {
             ensureTextureSize(user_frame_.width, user_frame_.height);
             if (user_frame_.format == ImageFormat::Luminance8) {
-                cv::Mat gray(user_frame_.height, user_frame_.width, CV_8UC1, (void*)user_frame_.data);
-                cv::Mat colored;
-                cv::applyColorMap(gray, colored, cv::COLORMAP_JET);
-                cv::Mat rgb;
-                cv::cvtColor(colored, rgb, cv::COLOR_BGR2RGB);
-                const size_t n = static_cast<size_t>(user_frame_.width) * user_frame_.height * 3;
-                if (n <= static_cast<size_t>(3 * width_ * height_)) {
-                    std::memcpy(rgb_buffer_, rgb.data, n);
-                }
+                unsigned char jet_lut[256 * 3];
+                buildJetRgbLut(jet_lut);
+                const auto* g8 = static_cast<const unsigned char*>(user_frame_.data);
+                applyJetToG8(g8, user_frame_.width, user_frame_.height, rgb_buffer_, jet_lut);
                 colorTexture_.Upload(rgb_buffer_, GL_RGB, GL_UNSIGNED_BYTE);
             }
             return;

@@ -1,5 +1,5 @@
 /*
- * RealSense five-view app (based on depthimage-example pipeline).
+ * Standalone RealSense example using the ViewPortal library (FetchContent).
  * Connects to an Intel RealSense D435, reads left IR, right IR, depth, and
  * color streams, and displays them in five ViewPortal viewports.
  * Viewport 4 shows a snapshot of the current color frame when 's' is pressed.
@@ -20,7 +20,6 @@ constexpr int kWidth = 640;
 constexpr int kHeight = 480;
 constexpr float kDepthMaxMeters = 1.50f;
 
-/** Holds the current frameset and buffers so FrameData pointers stay valid for one capture. */
 struct RealsenseCapture {
     rs2::frameset frameset;
     std::vector<unsigned char> depth_buffer;
@@ -39,7 +38,6 @@ struct RealsenseCapture {
     }
 };
 
-/** Configure streams and start the pipeline. Returns true on success. */
 bool initRealsense(rs2::pipeline& pipe) {
     rs2::config cfg;
     cfg.enable_stream(RS2_STREAM_DEPTH, kWidth, kHeight, RS2_FORMAT_Z16, 30);
@@ -56,7 +54,6 @@ bool initRealsense(rs2::pipeline& pipe) {
     }
 }
 
-/** Capture one frameset and fill left_ir, right_ir, depth, color_rgb. Returns false on failure. */
 bool captureFrames(rs2::pipeline& pipe, RealsenseCapture& out) {
     try {
         out.frameset = pipe.wait_for_frames();
@@ -110,14 +107,11 @@ bool captureFrames(rs2::pipeline& pipe, RealsenseCapture& out) {
     if (color_frame) {
         const int cw = color_frame.get_width();
         const int ch = color_frame.get_height();
-        const int rs_format = color_frame.get_profile().format();
-        const void* color_data = color_frame.get_data();
-
         out.color_rgb.width = cw;
         out.color_rgb.height = ch;
         out.color_rgb.format = ImageFormat::RGB8;
         out.color_rgb.row_stride = 0;
-        out.color_rgb.data = color_data;
+        out.color_rgb.data = color_frame.get_data();
     }
 
     return true;
@@ -134,18 +128,16 @@ int main(int /*argc*/, char* /*argv*/[])
         return 1;
     }
 
-    // Viewport types: 0 left IR, 1 right IR, 2 depth (colored), 3 color, 4 snapshot (on 's')
     std::vector<ViewportType> types = {
         ViewportType::G8,
         ViewportType::G8,
-        // ViewportType::G8,
         ViewportType::ColoredDepth,
-        ViewportType::RGB8,  // color camera (RGB8)
-        ViewportType::RGB8   // snapshot (frozen on 's')
+        ViewportType::RGB8,
+        ViewportType::RGB8
     };
 
     ViewPortalParams params;
-    params.window_title = "ViewPortal RealSense";
+    params.window_title = "ViewPortal RealSense (Example)";
     ViewPortal portal(1, 5, types, params);
     portal.setKeysToWatch({'s'});
 

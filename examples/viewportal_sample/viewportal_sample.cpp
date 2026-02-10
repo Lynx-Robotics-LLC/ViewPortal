@@ -1,5 +1,6 @@
 /*
- * ViewPortal demo app: 2x2 grid with RGB8, G8, Reconstruction, and Plot.
+ * Standalone ViewPortal sample using the ViewPortal library (FetchContent).
+ * 2x2 grid with RGB8, G8, Reconstruction, and Plot.
  * Frame capture (OpenCV camera or synthetic) is separated into capture functions;
  * the GUI just receives the captured frame data.
  */
@@ -21,7 +22,6 @@ constexpr int kColorHeight = 240;
 constexpr int kDepthWidth = 320;
 constexpr int kDepthHeight = 240;
 
-/** Holds buffers and FrameData for one capture (viewport 0 RGB8, viewport 1 G8). */
 struct ViewportalCapture {
     std::vector<unsigned char> color_buffer;
     std::vector<unsigned char> depth_buffer;
@@ -35,7 +35,6 @@ struct ViewportalCapture {
     }
 };
 
-/** Capture one frame: fill color_rgb (from camera or synthetic) and depth_g8 (synthetic). Returns true. */
 bool captureFrames(cv::VideoCapture* cap, ViewportalCapture& out) {
     out.color_rgb.data = nullptr;
     out.depth_g8.data = nullptr;
@@ -103,7 +102,7 @@ int main(int /*argc*/, char* /*argv*/[])
     params.window_width = 1280;
     params.window_height = 720;
     params.panel_width = 200;
-    params.window_title = "ViewPortal Multi-View";
+    params.window_title = "ViewPortal Sample (Example)";
 
     ViewPortal portal(rows, cols, types, params);
 
